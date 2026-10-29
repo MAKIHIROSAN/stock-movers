@@ -14,6 +14,108 @@ import yfinance as yf
 
 st.set_page_config(page_title="値動き銘柄＆経済ニュース", page_icon="📈", layout="wide")
 
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --ink: #172033;
+  --muted: #687386;
+  --line: #e5eaf2;
+  --panel: #ffffff;
+  --canvas: #f5f7fb;
+  --brand: #3659d9;
+  --brand-soft: #edf1ff;
+}
+html, body, [class*="css"] {
+  font-family: 'DM Sans', 'Noto Sans JP', sans-serif;
+}
+.stApp { background: var(--canvas); color: var(--ink); }
+[data-testid="stHeader"] { background: rgba(245,247,251,.88); }
+.block-container {
+  max-width: 1440px;
+  padding-top: 1.6rem;
+  padding-bottom: 3rem;
+  padding-left: clamp(1rem, 3vw, 2.6rem);
+  padding-right: clamp(1rem, 3vw, 2.6rem);
+}
+h1 { letter-spacing: -.045em; font-weight: 800 !important; line-height: 1.2 !important; }
+h2, h3, h4 { letter-spacing: -.025em; font-weight: 700 !important; }
+p, label, .stCaption { color: var(--muted); }
+.hero {
+  padding: clamp(1.25rem, 3vw, 2.1rem);
+  border-radius: 24px;
+  color: white;
+  background: radial-gradient(circle at 90% 0%, rgba(130,158,255,.55), transparent 32%),
+              linear-gradient(125deg, #17264c 0%, #2946a5 62%, #3d63dc 100%);
+  box-shadow: 0 16px 38px rgba(35,58,130,.17);
+  margin-bottom: 1.35rem;
+}
+.hero .eyebrow {
+  display: inline-block; padding: 5px 10px; border-radius: 99px;
+  background: rgba(255,255,255,.13); color: #e7edff;
+  font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; margin-bottom: .8rem;
+}
+.hero h1 { color: #fff !important; margin: 0 0 .65rem 0; font-size: clamp(1.65rem, 3.5vw, 2.65rem); }
+.hero p { color: #e1e8ff; margin: 0; max-width: 760px; line-height: 1.75; }
+div[data-testid="stMetric"] {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+  padding: 1rem 1.15rem; box-shadow: 0 4px 16px rgba(26,39,72,.035);
+}
+div[data-testid="stMetricLabel"] { font-weight: 600; color: var(--muted); }
+div[data-testid="stMetricValue"] { font-weight: 800; color: var(--ink); }
+div[data-testid="stTabs"] button {
+  border-radius: 12px; padding: .65rem .9rem; font-weight: 700;
+}
+div[data-testid="stTabs"] button[aria-selected="true"] {
+  background: var(--brand-soft); color: var(--brand);
+}
+div[data-testid="stTabs"] [data-baseweb="tab-list"] {
+  gap: .45rem; border-bottom: 1px solid var(--line); padding-bottom: .45rem;
+}
+div[data-testid="stDataFrame"], div[data-testid="stTable"] {
+  border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+}
+.stButton > button, .stDownloadButton > button {
+  border-radius: 12px; font-weight: 700; min-height: 2.65rem;
+  border: 1px solid #dce3f2; transition: transform .15s ease, box-shadow .15s ease;
+}
+.stButton > button:hover, .stDownloadButton > button:hover {
+  transform: translateY(-1px); box-shadow: 0 6px 16px rgba(35,58,130,.10);
+  border-color: #aabaf5;
+}
+.stButton > button[kind="primary"] { background: var(--brand); border-color: var(--brand); }
+section[data-testid="stSidebar"] {
+  background: #fff; border-right: 1px solid var(--line);
+}
+section[data-testid="stSidebar"] > div { padding-top: 1.5rem; }
+section[data-testid="stSidebar"] h2 { font-size: 1.1rem; }
+div[data-testid="stAlert"] { border-radius: 14px; }
+hr { border-color: var(--line); }
+a { text-underline-offset: 3px; }
+.news-card {
+  background: white; border: 1px solid var(--line); border-radius: 15px;
+  padding: 1rem 1.1rem; margin: .6rem 0; line-height: 1.65;
+}
+.small-note { color: var(--muted); font-size: .85rem; }
+@media (max-width: 760px) {
+  .block-container { padding-top: .8rem; padding-bottom: 1.5rem; }
+  .hero { border-radius: 18px; margin-bottom: 1rem; }
+  div[data-testid="stMetric"] { padding: .8rem; border-radius: 14px; }
+  div[data-testid="stMetricValue"] { font-size: 1.35rem; }
+  div[data-testid="stTabs"] [data-baseweb="tab-list"] { gap: .2rem; overflow-x: auto; }
+  div[data-testid="stTabs"] button { padding: .55rem .65rem; font-size: .82rem; }
+  [data-testid="stHorizontalBlock"] { gap: .55rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 UA = {"User-Agent": "Mozilla/5.0"}
 JST = timezone(timedelta(hours=9))
 
@@ -147,7 +249,13 @@ def search_stock_news(name, days, limit=5):
 
 
 # ---------------- サイドバー ----------------
-st.title("📈 値動きの大きい日本株 ＆ 経済ニュース")
+st.markdown("""
+<div class="hero">
+  <div class="eyebrow">MARKET INSIGHT · JAPAN</div>
+  <h1>日本株マーケット・ダッシュボード</h1>
+  <p>値動きの大きい銘柄をひと目でチェック。ランキング、チャート、経済ニュース、値動きの要因候補をひとつの画面にまとめました。</p>
+</div>
+""", unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("設定")
@@ -188,9 +296,11 @@ tab_rank, tab_chart, tab_news, tab_cause = st.tabs(["🏆 ランキング", "�
 
 # ---------------- ランキング ----------------
 with tab_rank:
-    st.subheader("上昇率ランキング")
+    st.subheader("🚀 上昇率ランキング")
+    st.caption("前日比の上昇率が大きい銘柄")
     st.dataframe(gainers, use_container_width=True, hide_index=True)
-    st.subheader("下落率ランキング")
+    st.subheader("📉 下落率ランキング")
+    st.caption("前日比の下落率が大きい銘柄")
     st.dataframe(losers, use_container_width=True, hide_index=True)
 
 # ---------------- グラフ ----------------
@@ -206,7 +316,8 @@ with tab_chart:
     ).properties(height=max(250, 26 * len(movers)))
     st.altair_chart(chart, use_container_width=True)
 
-    st.subheader("上位銘柄の3か月チャート")
+    st.subheader("📈 上位銘柄の3か月チャート")
+    st.caption("ランキング上位の終値推移（取得できるデータを表示）")
     for label, df in (("上昇上位", gainers.head(3)), ("下落上位", losers.head(3))):
         st.markdown(f"**{label}**")
         cols = st.columns(len(df))
