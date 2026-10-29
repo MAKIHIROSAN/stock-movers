@@ -1,9 +1,6 @@
-import io
-import time
-import html as htmllib
+import html
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone, timedelta
-from email.utils import parsedate_to_datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 import altair as alt
@@ -12,386 +9,234 @@ import requests
 import streamlit as st
 import yfinance as yf
 
-st.set_page_config(page_title="値動き銘柄＆経済ニュース", page_icon="📈", layout="wide")
-
+JST = timezone(timedelta(hours=9))
+UA = {"User-Agent": "Mozilla/5.0"}
+st.set_page_config(page_title="Market Lens｜経済ニュースと株価", page_icon="📊", layout="wide")
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap');
-
-:root {
-  --ink: #172033;
-  --muted: #687386;
-  --line: #e5eaf2;
-  --panel: #ffffff;
-  --canvas: #f5f7fb;
-  --brand: #3659d9;
-  --brand-soft: #edf1ff;
-}
-html, body, [class*="css"] {
-  font-family: 'DM Sans', 'Noto Sans JP', sans-serif;
-}
-.stApp { background: var(--canvas); color: var(--ink); }
-[data-testid="stHeader"] { background: rgba(245,247,251,.88); }
-.block-container {
-  max-width: 1440px;
-  padding-top: 1.6rem;
-  padding-bottom: 3rem;
-  padding-left: clamp(1rem, 3vw, 2.6rem);
-  padding-right: clamp(1rem, 3vw, 2.6rem);
-}
-h1 { letter-spacing: -.045em; font-weight: 800 !important; line-height: 1.2 !important; }
-h2, h3, h4 { letter-spacing: -.025em; font-weight: 700 !important; }
-p, label, .stCaption { color: var(--muted); }
-.hero {
-  padding: clamp(1.25rem, 3vw, 2.1rem);
-  border-radius: 24px;
-  color: white;
-  background: radial-gradient(circle at 90% 0%, rgba(130,158,255,.55), transparent 32%),
-              linear-gradient(125deg, #17264c 0%, #2946a5 62%, #3d63dc 100%);
-  box-shadow: 0 16px 38px rgba(35,58,130,.17);
-  margin-bottom: 1.35rem;
-}
-.hero .eyebrow {
-  display: inline-block; padding: 5px 10px; border-radius: 99px;
-  background: rgba(255,255,255,.13); color: #e7edff;
-  font-size: .75rem; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; margin-bottom: .8rem;
-}
-.hero h1 { color: #fff !important; margin: 0 0 .65rem 0; font-size: clamp(1.65rem, 3.5vw, 2.65rem); }
-.hero p { color: #e1e8ff; margin: 0; max-width: 760px; line-height: 1.75; }
-div[data-testid="stMetric"] {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
-  padding: 1rem 1.15rem; box-shadow: 0 4px 16px rgba(26,39,72,.035);
-}
-div[data-testid="stMetricLabel"] { font-weight: 600; color: var(--muted); }
-div[data-testid="stMetricValue"] { font-weight: 800; color: var(--ink); }
-div[data-testid="stTabs"] button {
-  border-radius: 12px; padding: .65rem .9rem; font-weight: 700;
-}
-div[data-testid="stTabs"] button[aria-selected="true"] {
-  background: var(--brand-soft); color: var(--brand);
-}
-div[data-testid="stTabs"] [data-baseweb="tab-list"] {
-  gap: .45rem; border-bottom: 1px solid var(--line); padding-bottom: .45rem;
-}
-div[data-testid="stDataFrame"], div[data-testid="stTable"] {
-  border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
-}
-.stButton > button, .stDownloadButton > button {
-  border-radius: 12px; font-weight: 700; min-height: 2.65rem;
-  border: 1px solid #dce3f2; transition: transform .15s ease, box-shadow .15s ease;
-}
-.stButton > button:hover, .stDownloadButton > button:hover {
-  transform: translateY(-1px); box-shadow: 0 6px 16px rgba(35,58,130,.10);
-  border-color: #aabaf5;
-}
-.stButton > button[kind="primary"] { background: var(--brand); border-color: var(--brand); }
-section[data-testid="stSidebar"] {
-  background: #fff; border-right: 1px solid var(--line);
-}
-section[data-testid="stSidebar"] > div { padding-top: 1.5rem; }
-section[data-testid="stSidebar"] h2 { font-size: 1.1rem; }
-div[data-testid="stAlert"] { border-radius: 14px; }
-hr { border-color: var(--line); }
-a { text-underline-offset: 3px; }
-.news-card {
-  background: white; border: 1px solid var(--line); border-radius: 15px;
-  padding: 1rem 1.1rem; margin: .6rem 0; line-height: 1.65;
-}
-.small-note { color: var(--muted); font-size: .85rem; }
-@media (max-width: 760px) {
-  .block-container { padding-top: .8rem; padding-bottom: 1.5rem; }
-  .hero { border-radius: 18px; margin-bottom: 1rem; }
-  div[data-testid="stMetric"] { padding: .8rem; border-radius: 14px; }
-  div[data-testid="stMetricValue"] { font-size: 1.35rem; }
-  div[data-testid="stTabs"] [data-baseweb="tab-list"] { gap: .2rem; overflow-x: auto; }
-  div[data-testid="stTabs"] button { padding: .55rem .65rem; font-size: .82rem; }
-  [data-testid="stHorizontalBlock"] { gap: .55rem; }
-}
-@media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
-}
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap');
+html,body,[class*="css"]{font-family:'DM Sans','Noto Sans JP',sans-serif}
+.stApp{background:#f5f7fb;color:#17233b}
+.block-container{max-width:1450px;padding-top:1.2rem;padding-bottom:3rem;padding-left:clamp(1rem,3vw,2.4rem);padding-right:clamp(1rem,3vw,2.4rem)}
+.hero{background:radial-gradient(circle at 90% 0%,#526bd866,transparent 32%),linear-gradient(125deg,#17264c,#2d4ca8 68%,#4267e8);color:white;border-radius:22px;padding:clamp(1.3rem,3vw,2.1rem);margin-bottom:1.2rem;box-shadow:0 14px 36px #203a801c}
+.hero .eyebrow{color:#d6e0ff;font-size:.75rem;letter-spacing:.13em;font-weight:800}
+.hero h1{color:white!important;font-size:clamp(1.7rem,3.4vw,2.6rem);letter-spacing:-.04em;margin:.45rem 0}
+.hero p{color:#e5ebff;max-width:800px;line-height:1.7;margin:0}
+div[data-testid="stMetric"]{background:white;border:1px solid #e5eaf2;border-radius:16px;padding:1rem;box-shadow:0 4px 15px #1e2d4b08}
+div[data-testid="stTabs"] [data-baseweb="tab-list"]{gap:.35rem;border-bottom:1px solid #e5eaf2;padding-bottom:.4rem}
+div[data-testid="stTabs"] button{border-radius:10px;font-weight:700;padding:.6rem .8rem}
+div[data-testid="stTabs"] button[aria-selected="true"]{background:#eaf0ff;color:#294dc9}
+.stButton>button,.stDownloadButton>button{border-radius:10px;font-weight:700}
+section[data-testid="stSidebar"]{background:#fff;border-right:1px solid #e5eaf2}
+@media(max-width:760px){.block-container{padding-top:.7rem}.hero{border-radius:16px}div[data-testid="stMetric"]{padding:.7rem}div[data-testid="stMetricValue"]{font-size:1.2rem}div[data-testid="stTabs"] [data-baseweb="tab-list"]{overflow-x:auto;gap:.15rem}div[data-testid="stTabs"] button{padding:.5rem .55rem;font-size:.8rem}}
 </style>
 """, unsafe_allow_html=True)
 
-
-UA = {"User-Agent": "Mozilla/5.0"}
-JST = timezone(timedelta(hours=9))
-
-FALLBACK = {
-    "7203": "トヨタ自動車", "6758": "ソニーグループ", "9984": "ソフトバンクグループ", "8306": "三菱UFJフィナンシャル・グループ",
-    "6861": "キーエンス", "9983": "ファーストリテイリング", "8035": "東京エレクトロン", "6098": "リクルートホールディングス",
-    "9432": "日本電信電話", "7974": "任天堂", "6501": "日立製作所", "8316": "三井住友フィナンシャルグループ", "8058": "三菱商事",
-    "4063": "信越化学工業", "6367": "ダイキン工業", "4519": "中外製薬", "6902": "デンソー", "7267": "ホンダ", "8031": "三井物産",
-    "9433": "KDDI", "6954": "ファナック", "6594": "ニデック", "4502": "武田薬品工業", "8001": "伊藤忠商事", "7741": "HOYA",
-    "6857": "アドバンテスト", "6146": "ディスコ", "4568": "第一三共", "9434": "ソフトバンク", "8411": "みずほフィナンシャルグループ",
-    "2914": "JT", "6981": "村田製作所", "6723": "ルネサスエレクトロニクス", "7011": "三菱重工業", "7013": "IHI", "5401": "日本製鉄",
-    "4661": "オリエンタルランド", "3382": "セブン&アイ・ホールディングス", "8766": "東京海上ホールディングス", "6503": "三菱電機",
-    "7751": "キヤノン", "6752": "パナソニック ホールディングス", "4543": "テルモ", "2802": "味の素", "9020": "JR東日本",
-    "9101": "日本郵船", "9104": "商船三井", "5108": "ブリヂストン", "6301": "コマツ", "8802": "三菱地所", "4755": "楽天グループ",
+GLOSSARY = {
+"CPI":("消費者物価指数","商品やサービスの価格が全体としてどれくらい変化したかを示す指標。米国CPIは金融政策や金利見通しを通じて株価・為替に影響することがあります。"),
+"GDP":("国内総生産","一定期間に国内で生み出された付加価値の合計。経済全体の規模や成長率を見る指標です。"),
+"FOMC":("米連邦公開市場委員会","米国の金融政策を決める会合。政策金利や声明、議長会見が株式・債券・為替市場を動かすことがあります。"),
+"政策金利":("中央銀行が金融政策で誘導する金利","借入コストや預金金利、為替などに影響します。株価への影響は景気や市場予想によって異なります。"),
+"利上げ":("政策金利を引き上げること","借入コスト上昇や通貨高要因になり得ますが、株価への影響は景気や事前予想によって異なります。"),
+"利下げ":("政策金利を引き下げること","資金調達をしやすくする効果が期待されます。一方、景気悪化への対応の場合は株価にマイナスとなることもあります。"),
+"インフレ":("物価が継続的に上昇すること","同じお金で買える量が減る状態。企業コストや中央銀行の金利判断に影響します。"),
+"円高":("円の価値が他通貨に対して上がること","例：1ドル150円から145円へ。輸入コストには追い風になりやすく、輸出企業には逆風となる場合があります。"),
+"円安":("円の価値が他通貨に対して下がること","例：1ドル145円から150円へ。輸出企業には追い風となる場合がある一方、輸入コストは上がりやすくなります。"),
+"PER":("株価収益率","株価が1株当たり利益の何倍かを示します。業種や成長期待によって適正水準は異なります。"),
+"PBR":("株価純資産倍率","株価が1株当たり純資産の何倍かを示す指標。資産の質や収益性も合わせて確認します。"),
+"出来高":("一定期間に売買された株数","増加は市場の関心が高まった可能性を示しますが、売買の方向そのものを示すわけではありません。"),
+"ボラティリティ":("価格変動の大きさ","価格がどのくらい上下するかを表します。高いほど短期間で大きく動く傾向があります。"),
+"関税":("輸入品に課される税金","輸入品の価格や企業の調達コスト、貿易関係に影響し、特定の業種の株価材料になることがあります。"),
+"決算":("企業が業績や財務状況を公表すること","売上高、営業利益、純利益、会社予想などを確認します。市場予想との差が株価材料になることがあります。"),
+"営業利益":("本業で稼いだ利益","売上高から売上原価や販売費・一般管理費などを差し引いた利益で、本業の収益力を見る際に使われます。"),
+"ETF":("取引所に上場している投資信託","株式と同じように市場で売買できます。投資対象やリスクは商品ごとに異なります。"),
+"リセッション":("景気後退","経済活動が広く弱まる局面。定義は国や機関によって異なることがあります。"),
+"ガイダンス":("企業などが示す今後の見通し","過去の実績だけでなく、会社が示す将来予想が株価を大きく動かすことがあります。"),
 }
+JP = {"^N225":"日経平均","1306.T":"TOPIX","7203.T":"トヨタ自動車","6758.T":"ソニーグループ","9984.T":"ソフトバンクグループ","8306.T":"三菱UFJ FG","7974.T":"任天堂","8035.T":"東京エレクトロン","6857.T":"アドバンテスト","7011.T":"三菱重工業","9432.T":"NTT","8058.T":"三菱商事"}
+US = {"^GSPC":"S&P 500","^IXIC":"NASDAQ","^DJI":"NYダウ","AAPL":"Apple","MSFT":"Microsoft","NVDA":"NVIDIA","AMZN":"Amazon","GOOGL":"Alphabet","META":"Meta","TSLA":"Tesla","JPM":"JPMorgan","AMD":"AMD"}
+FEEDS = [
+("NHK 経済","https://www3.nhk.or.jp/rss/news/cat5.xml"),
+("Yahoo!ニュース 経済","https://news.yahoo.co.jp/rss/topics/business.xml"),
+("Googleニュース 世界経済","https://news.google.com/rss/search?q="+quote("world economy markets inflation central bank")+"&hl=ja&gl=JP&ceid=JP:ja")
+]
 
-JPX_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
-
-NEWS_FEEDS = {
-    "NHK 経済": "https://www3.nhk.or.jp/rss/news/cat5.xml",
-    "Yahoo!ニュース 経済": "https://news.yahoo.co.jp/rss/topics/business.xml",
-}
-
-CAUSE_KEYWORDS = {
-    "決算・業績": ["決算", "業績", "増益", "減益", "赤字", "黒字", "最高益", "営業利益", "純利益", "売上高"],
-    "業績予想の修正": ["下方修正", "上方修正", "下振れ", "上振れ", "予想を修正", "見通し"],
-    "格付け・目標株価": ["格下げ", "格上げ", "目標株価", "投資判断", "レーティング", "引き下げ", "引き上げ"],
-    "不祥事・リスク": ["不正", "不祥事", "訴訟", "提訴", "リコール", "事故", "行政処分", "課徴金", "データ流出", "障害", "調査"],
-    "資本政策・配当": ["増資", "公募", "売り出し", "自社株買い", "株式分割", "増配", "減配", "配当", "上場廃止"],
-    "M&A・提携": ["買収", "TOB", "提携", "統合", "出資", "合併"],
-    "市場全体・マクロ": ["日経平均", "米株", "ダウ", "円高", "円安", "利上げ", "利下げ", "関税", "米国株", "ハイテク株"],
-}
-
-
-def classify(title):
-    return [cat for cat, kws in CAUSE_KEYWORDS.items() if any(k in title for k in kws)]
-
-
-def md_safe(text):
-    return text.replace("[", "(").replace("]", ")")
-
-
-# ---------------- データ取得（キャッシュ付き） ----------------
-@st.cache_data(ttl=86400, show_spinner="銘柄リストを読み込み中…")
-def load_universe(full: bool):
-    if full:
-        try:
-            r = requests.get(JPX_URL, headers=UA, timeout=30)
-            r.raise_for_status()
-            df = pd.read_excel(io.BytesIO(r.content))
-            df = df[df["市場・商品区分"].astype(str).str.contains("プライム")]
-            return dict(zip(df["コード"].astype(str), df["銘柄名"])), "JPX プライム市場"
-        except Exception:
-            pass
-    return FALLBACK, "主要銘柄"
-
-
-@st.cache_data(ttl=900, show_spinner="株価を取得中…（全銘柄の場合は数分かかります）")
-def fetch_changes(names: dict, batch: int = 150):
-    codes = list(names.keys())
-    rows = []
-    for i in range(0, len(codes), batch):
-        chunk = [c + ".T" for c in codes[i:i + batch]]
-        try:
-            df = yf.download(chunk, period="7d", interval="1d", group_by="ticker",
-                             auto_adjust=False, progress=False, threads=True)
-        except Exception:
-            continue
-        for t in chunk:
-            try:
-                close = df[t]["Close"].dropna()
-                vol = df[t]["Volume"].dropna()
-                if len(close) < 2:
-                    continue
-                last, prev = float(close.iloc[-1]), float(close.iloc[-2])
-                code = t[:-2]
-                rows.append({
-                    "コード": code, "銘柄名": names.get(code, ""),
-                    "終値": round(last, 1), "前日終値": round(prev, 1),
-                    "前日比(円)": round(last - prev, 1),
-                    "変動率(%)": round((last / prev - 1) * 100, 2),
-                    "出来高": int(vol.iloc[-1]) if len(vol) else 0,
-                    "日付": str(close.index[-1].date()),
-                })
-            except Exception:
-                continue
-    return pd.DataFrame(rows)
-
-
-@st.cache_data(ttl=900)
-def index_change(symbol="^N225"):
+@st.cache_data(ttl=900, show_spinner=False)
+def feed(url):
     try:
-        c = yf.Ticker(symbol).history(period="7d")["Close"].dropna()
-        return round((float(c.iloc[-1]) / float(c.iloc[-2]) - 1) * 100, 2) if len(c) >= 2 else None
-    except Exception:
-        return None
+        r=requests.get(url,headers=UA,timeout=15); r.raise_for_status()
+        root=ET.fromstring(r.content); out=[]
+        for it in root.iter("item"):
+            out.append({"title":it.findtext("title",""),"link":it.findtext("link",""),"published":it.findtext("pubDate",""),"source":it.findtext("source","")})
+        return out
+    except Exception: return []
 
+@st.cache_data(ttl=900, show_spinner=False)
+def history(ticker, period="3mo"):
+    try:
+        df=yf.Ticker(ticker).history(period=period,interval="1d")
+        if df.empty: return pd.DataFrame()
+        df=df.reset_index()
+        col="Date" if "Date" in df.columns else "Datetime"
+        df=df.rename(columns={col:"日付","Close":"終値","Volume":"出来高"})
+        df["日付"]=pd.to_datetime(df["日付"]).dt.tz_localize(None)
+        return df
+    except Exception: return pd.DataFrame()
 
-@st.cache_data(ttl=3600)
-def history(code):
-    return yf.Ticker(code + ".T").history(period="3mo")["Close"]
+@st.cache_data(ttl=600, show_spinner=False)
+def search_news(q, days=7):
+    url="https://news.google.com/rss/search?q="+quote(f"{q} when:{days}d")+"&hl=ja&gl=JP&ceid=JP:ja"
+    return feed(url)[:15]
 
+def term_buttons(text):
+    found=[t for t in GLOSSARY if t.lower() in text.lower()]
+    if not found: return
+    cols=st.columns(min(4,len(found)))
+    for i,t in enumerate(found[:8]):
+        with cols[i%len(cols)]:
+            with st.popover("❔ "+t,use_container_width=True):
+                st.markdown("**"+GLOSSARY[t][0]+"**")
+                st.write(GLOSSARY[t][1])
 
-@st.cache_data(ttl=600)
-def fetch_feed(url):
-    r = requests.get(url, headers=UA, timeout=20)
-    r.raise_for_status()
-    root = ET.fromstring(r.content)
-    return [{"title": it.findtext("title", ""), "link": it.findtext("link", ""),
-             "published": it.findtext("pubDate", "")} for it in root.iter("item")]
-
-
-@st.cache_data(ttl=1800)
-def search_stock_news(name, days, limit=5):
-    q = quote(f'"{name}" 株 when:{days}d')
-    url = f"https://news.google.com/rss/search?q={q}&hl=ja&gl=JP&ceid=JP:ja"
-    r = requests.get(url, headers=UA, timeout=20)
-    r.raise_for_status()
-    root = ET.fromstring(r.content)
-    items = []
-    for it in root.iter("item"):
-        title = it.findtext("title", "")
-        pub = it.findtext("pubDate", "")
-        try:
-            pub = parsedate_to_datetime(pub).astimezone(JST).strftime("%m/%d %H:%M")
-        except Exception:
-            pass
-        items.append({"title": title, "link": it.findtext("link", ""),
-                      "source": it.findtext("source", ""), "date": pub, "tags": classify(title)})
-    return items[:limit]
-
-
-# ---------------- サイドバー ----------------
-st.markdown("""
-<div class="hero">
-  <div class="eyebrow">MARKET INSIGHT · JAPAN</div>
-  <h1>日本株マーケット・ダッシュボード</h1>
-  <p>値動きの大きい銘柄をひと目でチェック。ランキング、チャート、経済ニュース、値動きの要因候補をひとつの画面にまとめました。</p>
-</div>
-""", unsafe_allow_html=True)
+def show_news(items, limit=15):
+    if not items:
+        st.info("ニュースを取得できませんでした。検索語や期間を変えてください。")
+        return
+    for x in items[:limit]:
+        title=x.get("title","")
+        st.markdown(f"**{title}**")
+        st.caption(f'{x.get("source") or "ニュース配信元"}　{x.get("published","")}')
+        if x.get("link"): st.markdown(f"[元記事を読む ↗]({x['link']})")
+        term_buttons(title)
+        st.divider()
 
 with st.sidebar:
-    st.header("設定")
-    choice = st.radio("対象銘柄", ["主要約50銘柄（高速）", "プライム全銘柄（時間がかかる）"])
-    top_n = st.slider("表示件数", 3, 20, 10)
-    min_volume = st.number_input("最低出来高（株）", 0, 10_000_000, 100_000, step=50_000)
-    lookback = st.slider("要因ニュースの対象期間（日）", 1, 7, 3)
-    if st.button("🔄 最新データに更新"):
-        st.cache_data.clear()
-        st.session_state.pop("report", None)
-        st.rerun()
+    st.markdown("## 📊 Market Lens")
+    st.caption("経済ニュース × 株価分析")
+    market=st.radio("対象市場",["日米まとめ","日本市場","米国市場"])
+    days=st.select_slider("ニュース対象期間",[1,3,7,14],value=7,format_func=lambda x:f"過去{x}日")
+    search_q=st.text_input("ニュース検索",placeholder="例：日銀、半導体、NVIDIA")
+    if st.button("🔄 データを更新",use_container_width=True):
+        st.cache_data.clear(); st.rerun()
+    st.divider()
+    st.caption("無料公開データ中心。株価やニュースには遅延・欠損・取得制限が発生する場合があります。")
 
-names, universe_label = load_universe(choice.startswith("プライム"))
-data = fetch_changes(names)
+st.markdown("""<div class="hero"><div class="eyebrow">MARKET LENS · ECONOMY & EQUITIES</div><h1>経済ニュースを、株価の理解につなげる。</h1><p>日本と世界のニュース、主要市場の動き、銘柄別の材料をひとつに。わからない用語はボタンを押すだけで簡単に確認できます。</p></div>""",unsafe_allow_html=True)
 
-if data.empty:
-    st.error("株価データを取得できませんでした。Yahoo Financeの制限や一時的な障害の可能性があります。"
-             "しばらくしてから「最新データに更新」を押してください。")
-    st.stop()
+if market=="日本市場": indexes={"日経平均":"^N225","TOPIX":"1306.T"}
+elif market=="米国市場": indexes={"S&P 500":"^GSPC","NASDAQ":"^IXIC","NYダウ":"^DJI"}
+else: indexes={"日経平均":"^N225","S&P 500":"^GSPC","NASDAQ":"^IXIC","ドル円":"JPY=X"}
+mc=st.columns(len(indexes))
+for i,(label,ticker) in enumerate(indexes.items()):
+    df=history(ticker,"7d")
+    with mc[i]:
+        if len(df)>=2:
+            p=df["終値"].dropna(); st.metric(label,f"{p.iloc[-1]:,.2f}",f"{(p.iloc[-1]/p.iloc[-2]-1)*100:+.2f}%")
+        else: st.metric(label,"取得不可")
+st.caption(f"更新確認：{datetime.now(JST):%Y-%m-%d %H:%M} JST ・ 無料データのためリアルタイム配信を保証しません。")
 
-data = data[data["出来高"] >= min_volume]
-if data.empty:
-    st.warning("条件に合う銘柄がありません。サイドバーの最低出来高を下げてください。")
-    st.stop()
-latest = data["日付"].max()
-data = data[data["日付"] == latest]
-gainers = data.sort_values("変動率(%)", ascending=False).head(top_n).reset_index(drop=True)
-losers = data.sort_values("変動率(%)", ascending=True).head(top_n).reset_index(drop=True)
-nikkei = index_change()
+t_home,t_news,t_stock,t_events,t_glossary,t_watch=st.tabs(["🏠 概要","📰 経済ニュース","📈 株価分析","🗓️ 指標・イベント","📖 用語辞典","⭐ マイ銘柄"])
 
-c1, c2, c3 = st.columns(3)
-c1.metric("対象日", latest)
-c2.metric("集計銘柄数", f"{len(data)}（{universe_label}）")
-c3.metric("日経平均", f"{nikkei:+.2f}%" if nikkei is not None else "取得不可")
-st.caption(f"表示更新: {datetime.now(JST):%Y-%m-%d %H:%M} JST ／ 無料データのため遅延・欠損があり得ます。投資助言ではありません。")
+with t_home:
+    a,b=st.columns([1.3,1])
+    with a:
+        st.subheader("今日の主なニュース")
+        chosen=FEEDS[2:] if market=="米国市場" else FEEDS[:2]
+        for name,url in chosen:
+            st.markdown("**"+name+"**")
+            items=feed(url)
+            if items:
+                for x in items[:5]:
+                    st.markdown(f"- [{x['title']}]({x['link']})")
+                    term_buttons(x["title"])
+            else: st.caption("ニュースを取得できませんでした。")
+    with b:
+        st.subheader("ニュースを見るときのポイント")
+        st.markdown("- 金利：中央銀行の政策や物価指標を確認\n- 為替：円高・円安が企業に与える影響を確認\n- 業績：決算や会社予想も確認\n- 市場予想との差：予想と発表内容の違いに注目")
+        with st.expander("初めての方向け：確認リスト"):
+            st.checkbox("発表元と記事日時を確認した")
+            st.checkbox("予想と実績を区別した")
+            st.checkbox("株価がすでに反応していないか確認した")
+            st.checkbox("別の情報源でも確認した")
 
-tab_rank, tab_chart, tab_news, tab_cause = st.tabs(["🏆 ランキング", "📊 グラフ", "📰 経済ニュース", "🔍 要因分析"])
+with t_news:
+    st.subheader("ニュース検索・テーマ別チェック")
+    q=search_q or st.text_input("企業名・テーマ",placeholder="例：米国CPI、日銀、半導体、原油",key="news_q")
+    n_days=st.selectbox("対象期間（日）",[1,3,7,14],index=2)
+    if q: items=search_news(q,n_days)
+    else:
+        items=[]
+        for name,url in FEEDS:
+            items += [{**x,"source":x.get("source") or name} for x in feed(url)[:8]]
+    theme=st.selectbox("テーマで絞り込み",["すべて","金融政策・金利","物価・景気","企業決算","為替・貿易","地政学・資源"])
+    keywords={"金融政策・金利":["金利","日銀","FRB","FOMC","利上げ","利下げ"],"物価・景気":["CPI","物価","インフレ","GDP","景気","雇用"],"企業決算":["決算","業績","利益","売上","見通し"],"為替・貿易":["円高","円安","為替","関税","貿易","ドル"],"地政学・資源":["原油","中東","戦争","制裁","資源"]}
+    if theme!="すべて": items=[x for x in items if any(k.lower() in x["title"].lower() for k in keywords[theme])]
+    show_news(items,25)
 
-# ---------------- ランキング ----------------
-with tab_rank:
-    st.subheader("🚀 上昇率ランキング")
-    st.caption("前日比の上昇率が大きい銘柄")
-    st.dataframe(gainers, use_container_width=True, hide_index=True)
-    st.subheader("📉 下落率ランキング")
-    st.caption("前日比の下落率が大きい銘柄")
-    st.dataframe(losers, use_container_width=True, hide_index=True)
+with t_stock:
+    st.subheader("銘柄の値動きと関連ニュース")
+    group=st.radio("市場",["日本株","米国株"],horizontal=True)
+    stocks=JP if group=="日本株" else US
+    tickers=[x for x in stocks if not x.startswith("^") and x!="1306.T"]
+    ticker=st.selectbox("銘柄",tickers,format_func=lambda x:f"{stocks[x]}（{x}）")
+    period=st.selectbox("チャート期間",["1mo","3mo","6mo","1y"],index=1,format_func=lambda x:{"1mo":"1か月","3mo":"3か月","6mo":"6か月","1y":"1年"}[x])
+    df=history(ticker,period)
+    if not df.empty:
+        p=df["終値"].dropna()
+        if len(p)>=2:
+            m1,m2,m3=st.columns(3)
+            m1.metric("直近終値",f"{p.iloc[-1]:,.2f}")
+            m2.metric("前日比",f"{(p.iloc[-1]/p.iloc[-2]-1)*100:+.2f}%")
+            m3.metric("期間変化率",f"{(p.iloc[-1]/p.iloc[0]-1)*100:+.2f}%")
+        chart=alt.Chart(df).mark_line(strokeWidth=2.5).encode(x=alt.X("日付:T",title=None),y=alt.Y("終値:Q",title="終値"),tooltip=["日付:T",alt.Tooltip("終値:Q",format=",.2f")]).properties(height=300)
+        st.altair_chart(chart,use_container_width=True)
+    else: st.warning("株価履歴を取得できませんでした。")
+    st.markdown("#### 関連ニュース")
+    show_news(search_news(stocks[ticker],days),8)
 
-# ---------------- グラフ ----------------
-with tab_chart:
-    movers = pd.concat([gainers, losers]).drop_duplicates("コード").rename(columns={"変動率(%)": "変動率"})
-    movers["銘柄"] = movers["コード"] + " " + movers["銘柄名"].str.slice(0, 10)
-    movers["方向"] = movers["変動率"].apply(lambda v: "上昇" if v >= 0 else "下落")
-    chart = alt.Chart(movers).mark_bar().encode(
-        x=alt.X("変動率:Q", title="前日比 (%)"),
-        y=alt.Y("銘柄:N", sort="-x", title=None),
-        color=alt.Color("方向:N", scale=alt.Scale(domain=["上昇", "下落"], range=["#d62728", "#1f77b4"]), legend=None),
-        tooltip=["コード", "銘柄名", "変動率", "終値"],
-    ).properties(height=max(250, 26 * len(movers)))
-    st.altair_chart(chart, use_container_width=True)
+with t_events:
+    st.subheader("経済指標・イベント")
+    st.info("無料版ではイベント関連ニュースを検索して補助します。正確な発表時刻・市場予想・実績を保証する専用カレンダーAPIは未接続です。")
+    eq=st.text_input("イベントを検索",value="米国 CPI FOMC 日銀 GDP 雇用統計")
+    show_news(search_news(eq,14),15)
+    st.markdown("#### 定期的に確認したい指標")
+    st.dataframe(pd.DataFrame([["米国","CPI","物価・金利見通し"],["米国","雇用統計","雇用・景気・金融政策"],["米国","FOMC","政策金利と金融政策"],["日本","日銀会合","日本の金利・円相場"],["世界","GDP","経済成長"]],columns=["地域","指標","見るポイント"]),hide_index=True,use_container_width=True)
 
-    st.subheader("📈 上位銘柄の3か月チャート")
-    st.caption("ランキング上位の終値推移（取得できるデータを表示）")
-    for label, df in (("上昇上位", gainers.head(3)), ("下落上位", losers.head(3))):
-        st.markdown(f"**{label}**")
-        cols = st.columns(len(df))
-        for col, (_, r) in zip(cols, df.iterrows()):
-            with col:
-                st.caption(f'{r["コード"]} {r["銘柄名"][:12]}  {r["変動率(%)"]:+.1f}%')
-                try:
-                    st.line_chart(history(r["コード"]), height=180)
-                except Exception:
-                    st.write("チャートを取得できませんでした")
+with t_glossary:
+    st.subheader("クリックして学べる経済・投資用語")
+    st.caption("用語のボタンを押すと、短い説明がその場で開きます。")
+    cols=st.columns(3)
+    for i,(term,(title,desc)) in enumerate(GLOSSARY.items()):
+        with cols[i%3]:
+            with st.popover("❔ "+term,use_container_width=True):
+                st.markdown("### "+term)
+                st.markdown("**"+title+"**")
+                st.write(desc)
+    st.divider()
+    q=st.text_input("用語を検索",placeholder="例：PER、円高、GDP",key="glossary_q")
+    if q:
+        hits=[(k,v) for k,v in GLOSSARY.items() if q.lower() in k.lower() or q.lower() in v[0].lower() or q.lower() in v[1].lower()]
+        if hits:
+            for k,(title,desc) in hits:
+                with st.expander(f"{k} — {title}",expanded=True): st.write(desc)
+        else: st.warning("登録されていない用語です。追加候補にできます。")
 
-# ---------------- 経済ニュース ----------------
-with tab_news:
-    for source, url in NEWS_FEEDS.items():
-        st.subheader(source)
-        try:
-            for e in fetch_feed(url)[:10]:
-                st.markdown(f"- [{md_safe(e['title'])}]({e['link']})  \n  {e['published']}")
-        except Exception as ex:
-            st.write(f"取得できませんでした: {ex}")
+with t_watch:
+    st.subheader("マイ銘柄ウォッチリスト")
+    st.caption("コードをカンマ区切りで入力。日本株は末尾に .T を付けます。現時点では入力したリストを一時的に表示します。")
+    raw=st.text_input("銘柄コード",value="7203.T,NVDA,8306.T,AAPL")
+    watch=[x.strip().upper() for x in raw.split(",") if x.strip()]
+    rows=[]
+    for code in watch:
+        df=history(code,"7d")
+        if len(df)>=2:
+            p=df["終値"].dropna()
+            rows.append({"コード":code,"終値":round(float(p.iloc[-1]),2),"前日比(%)":round((p.iloc[-1]/p.iloc[-2]-1)*100,2),"日付":df["日付"].iloc[-1].strftime("%Y-%m-%d")})
+    if rows:
+        wd=pd.DataFrame(rows); st.dataframe(wd,hide_index=True,use_container_width=True)
+        st.download_button("CSVでダウンロード",wd.to_csv(index=False).encode("utf-8-sig"),"market_watchlist.csv","text/csv")
+    else: st.warning("データを取得できません。銘柄コードをご確認ください。")
 
-# ---------------- 要因分析 ----------------
-def render_report(report):
-    for item in report:
-        arrow = "📈" if item["変動率"] >= 0 else "📉"
-        st.markdown(f'#### {arrow} {item["コード"]} {item["銘柄名"]}　{item["変動率"]:+.2f}%')
-        if nikkei is not None and abs(nikkei) >= 1 and (nikkei > 0) == (item["変動率"] > 0):
-            st.caption(f"参考: 日経平均も {nikkei:+.2f}% と同じ方向に動いており、市場全体の影響も考えられます。")
-        elif nikkei is not None:
-            st.caption(f"参考: 日経平均は {nikkei:+.2f}%")
-        if item["error"]:
-            st.write(f"ニュースを取得できませんでした: {item['error']}")
-        elif item["tags"]:
-            st.markdown(f"**要因の候補（見出しからの分類）:** {'、'.join(item['tags'])}")
-        else:
-            st.markdown("**関連する報道が見つからず、要因は特定できません。**")
-        for a in item["articles"]:
-            tg = f"　`{'・'.join(a['tags'])}`" if a["tags"] else ""
-            st.markdown(f"- [{md_safe(a['title'])}]({a['link']})  \n  {a['source']} / {a['date']}{tg}")
-
-
-with tab_cause:
-    st.info("値動きの大きい銘柄ごとに、直近の関連ニュースを検索し、見出しの言葉から要因の「候補」を分類します。"
-            "因果関係を証明するものではありません。根拠の記事リンクを必ず確認してください。")
-    target = st.radio("対象", ["下落", "上昇", "両方"], horizontal=True)
-    if st.button("要因を調べる"):
-        frames = []
-        if target in ("下落", "両方"):
-            frames.append(losers)
-        if target in ("上昇", "両方"):
-            frames.append(gainers)
-        targets = pd.concat(frames).reset_index(drop=True)
-        report = []
-        bar = st.progress(0.0, text="ニュースを検索中…")
-        for i, (_, r) in enumerate(targets.iterrows()):
-            try:
-                arts, err = search_stock_news(r["銘柄名"], lookback), ""
-            except Exception as ex:
-                arts, err = [], str(ex)
-            report.append({"コード": r["コード"], "銘柄名": r["銘柄名"], "変動率": r["変動率(%)"],
-                           "articles": arts, "error": err,
-                           "tags": sorted({t for a in arts for t in a["tags"]})})
-            bar.progress((i + 1) / len(targets), text=f"ニュースを検索中… {i + 1}/{len(targets)}")
-            time.sleep(0.3)
-        bar.empty()
-        st.session_state["report"] = report
-
-    report = st.session_state.get("report")
-    if report:
-        render_report(report)
-        csv = pd.DataFrame([{
-            "コード": x["コード"], "銘柄名": x["銘柄名"], "変動率(%)": x["変動率"],
-            "要因の候補": "、".join(x["tags"]) if x["tags"] else "特定できず",
-            "根拠（見出し）": " | ".join(a["title"] for a in x["articles"]),
-            "根拠（URL）": " | ".join(a["link"] for a in x["articles"]),
-        } for x in report]).to_csv(index=False).encode("utf-8-sig")
-        st.download_button("CSVでダウンロード", csv, "要因レポート.csv", "text/csv")
+st.divider()
+st.caption("このアプリは情報整理を支援するもので、投資助言ではありません。見出しから因果関係は断定できません。重要な情報は一次資料・複数の情報源で確認してください。")
