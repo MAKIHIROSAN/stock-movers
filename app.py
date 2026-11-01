@@ -211,26 +211,46 @@ with t_stock:
     if moves.empty:
         st.warning("株価を取得できませんでした。しばらくしてから「データを更新」を押してください。")
     else:
+        # 米国株は円換算して表示する（ドル円レートを使用）
+        fx_df = history("JPY=X", "3mo")
+        fx_df = fx_df[["日付", "終値"]].rename(columns={"終値": "レート"}).dropna() if not fx_df.empty else pd.DataFrame()
+        if not fx_df.empty:
+            fx_df["日付"] = fx_df["日付"].astype("datetime64[ns]")
+            fx_df = fx_df.sort_values("日付")
+        fx_rate = float(fx_df["レート"].iloc[-1]) if not fx_df.empty else None
+        if fx_rate is None and market != "日本株":
+            st.warning("ドル円レートを取得できなかったため、米国株はドル表示になります。")
+        st.caption("米国株は円換算で表示しています" + (f"（1ドル＝{fx_rate:,.2f}円で換算）。" if fx_rate else "。") + "前日比(%)は各銘柄の現地価格ベースです。")
+
         moves["名称"] = moves["コード"].map(universe)
         moves["abs"] = moves["前日比(%)"].abs()
         top = moves.sort_values("abs", ascending=False).head(10).reset_index(drop=True)
 
         for rank, row in top.iterrows():
             code, name = row["コード"], row["名称"]
-            unit = "円" if code.endswith(".T") else "ドル"
+            is_jp = code.endswith(".T")
+            to_yen = (not is_jp) and fx_rate is not None
+            unit = "ドル" if ((not is_jp) and fx_rate is None) else "円"
+            price = row["終値"] * fx_rate if to_yen else row["終値"]
+            price_text = f"{price:,.0f} 円" if unit == "円" else f"{price:,.2f} ドル"
             with st.container(border=True):
                 st.markdown(f"### {rank + 1}位　{name}（{code}）")
                 left, right = st.columns([1.1, 1])
                 with left:
                     m1, m2 = st.columns(2)
-                    m1.metric("直近終値", f"{row['終値']:,.2f} {unit}")
+                    m1.metric("直近終値", price_text)
                     m2.metric("前日比", f"{row['前日比(%)']:+.2f}%")
                     h = history(code, "3mo")
+                    if not h.empty and to_yen:
+                        h["日付"] = h["日付"].astype("datetime64[ns]")
+                        h = pd.merge_asof(h.sort_values("日付"), fx_df, on="日付", direction="backward")
+                        h["レート"] = h["レート"].fillna(fx_rate)
+                        h["終値"] = h["終値"] * h["レート"]
                     if not h.empty:
                         chart = alt.Chart(h).mark_line(strokeWidth=2.2).encode(
                             x=alt.X("日付:T", title=None),
-                            y=alt.Y("終値:Q", title=None, scale=alt.Scale(zero=False)),
-                            tooltip=["日付:T", alt.Tooltip("終値:Q", format=",.2f")],
+                            y=alt.Y("終値:Q", title=f"終値（{unit}）", scale=alt.Scale(zero=False)),
+                            tooltip=["日付:T", alt.Tooltip("終値:Q", format=",.0f" if unit == "円" else ",.2f")],
                         ).properties(height=200)
                         st.altair_chart(chart, use_container_width=True)
                 with right:
