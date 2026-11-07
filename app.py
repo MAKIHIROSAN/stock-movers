@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
@@ -21,15 +22,19 @@ html,body,[class*="css"]{font-family:'DM Sans','Noto Sans JP',sans-serif}
 .block-container{max-width:1450px;padding-top:1.2rem;padding-bottom:3rem;padding-left:clamp(1rem,3vw,2.4rem);padding-right:clamp(1rem,3vw,2.4rem)}
 .hero{background:radial-gradient(circle at 90% 0%,#526bd866,transparent 32%),linear-gradient(125deg,#17264c,#2d4ca8 68%,#4267e8);color:white;border-radius:22px;padding:clamp(1.3rem,3vw,2.1rem);margin-bottom:1.2rem;box-shadow:0 14px 36px #203a801c}
 .hero .eyebrow{color:#d6e0ff;font-size:.75rem;letter-spacing:.13em;font-weight:800}
-.hero h1{color:white!important;font-size:clamp(1.7rem,3.4vw,2.6rem);letter-spacing:-.04em;margin:.45rem 0}
+.hero h1{color:white!important;font-size:clamp(1.5rem,3.4vw,2.6rem);letter-spacing:-.04em;margin:.45rem 0}
 .hero p{color:#e5ebff;max-width:800px;line-height:1.7;margin:0}
 div[data-testid="stMetric"]{background:white;border:1px solid #e5eaf2;border-radius:16px;padding:1rem;box-shadow:0 4px 15px #1e2d4b08}
-div[data-testid="stTabs"] [data-baseweb="tab-list"]{gap:.35rem;border-bottom:1px solid #e5eaf2;padding-bottom:.4rem}
-div[data-testid="stTabs"] button{border-radius:10px;font-weight:700;padding:.6rem .8rem}
-div[data-testid="stTabs"] button[aria-selected="true"]{background:#eaf0ff;color:#294dc9}
 .stButton>button,.stDownloadButton>button{border-radius:10px;font-weight:700}
 section[data-testid="stSidebar"]{background:#fff;border-right:1px solid #e5eaf2}
-@media(max-width:760px){.block-container{padding-top:.7rem}.hero{border-radius:16px}div[data-testid="stMetric"]{padding:.7rem}div[data-testid="stMetricValue"]{font-size:1.2rem}div[data-testid="stTabs"] [data-baseweb="tab-list"]{overflow-x:auto;gap:.15rem}div[data-testid="stTabs"] button{padding:.5rem .55rem;font-size:.8rem}}
+div[role="radiogroup"]{gap:.5rem;flex-wrap:wrap}
+@media(max-width:760px){
+  .block-container{padding-top:.7rem}
+  .hero{border-radius:16px;padding:1.1rem}
+  .hero p{font-size:.85rem;line-height:1.6}
+  div[data-testid="stMetric"]{padding:.7rem}
+  div[data-testid="stMetricValue"]{font-size:1.2rem}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,7 +77,7 @@ def nikkei_news(query, days=3):
     """site:nikkei.com で絞った最新記事を新しい順で返す。"""
     url = "https://news.google.com/rss/search?q=" + quote(f"{query} when:{days}d") + "&hl=ja&gl=JP&ceid=JP:ja"
     try:
-        r = requests.get(url, headers=UA, timeout=15)
+        r = requests.get(url, headers=UA, timeout=8)
         r.raise_for_status()
         root = ET.fromstring(r.content)
     except Exception:
@@ -86,7 +91,6 @@ def nikkei_news(query, days=3):
         except Exception:
             published = None
         out.append({"title": title, "link": it.findtext("link", ""), "source": source or "日本経済新聞", "published": published})
-    # 日経グループの記事に限定（Nikkei Asia など英語媒体は除外）。該当が無ければ全件を使う
     nikkei_only = [x for x in out if "日本経済新聞" in x["source"] or "日経" in x["source"]]
     out = nikkei_only or out
     out.sort(key=lambda x: x["published"] or datetime.min.replace(tzinfo=JST), reverse=True)
@@ -96,14 +100,26 @@ def nikkei_news(query, days=3):
 @st.cache_data(ttl=600, show_spinner=False)
 def latest_nikkei(days=2):
     """トップ・市場・経済など複数の検索をまとめて重複を除き、新しい順に並べる。"""
+    queries = ("site:nikkei.com", "site:nikkei.com 株価 市場", "site:nikkei.com 経済 企業")
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        results = list(ex.map(lambda q: nikkei_news(q, days), queries))
     merged, seen = [], set()
-    for q in ("site:nikkei.com", "site:nikkei.com 株価 市場", "site:nikkei.com 経済 企業"):
-        for x in nikkei_news(q, days):
+    for res in results:
+        for x in res:
             if x["title"] not in seen:
                 seen.add(x["title"])
                 merged.append(x)
     merged.sort(key=lambda x: x["published"] or datetime.min.replace(tzinfo=JST), reverse=True)
     return merged
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def news_for_names(names, days=14):
+    """複数銘柄の関連ニュースを並列で取得する。"""
+    names = list(names)
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        results = list(ex.map(lambda n: nikkei_news(f'site:nikkei.com "{n}"', days), names))
+    return dict(zip(names, results))
 
 
 def show_news(items, limit=20, empty_msg="日経の記事を取得できませんでした。しばらくしてから「データを更新」を押してください。"):
@@ -124,7 +140,7 @@ def show_news(items, limit=20, empty_msg="日経の記事を取得できませ�
 @st.cache_data(ttl=900, show_spinner=False)
 def history(ticker, period="3mo"):
     try:
-        df = yf.Ticker(ticker).history(period=period, interval="1d")
+        df = yf.Ticker(ticker).history(period=period, interval="1d", timeout=10)
         if df.empty:
             return pd.DataFrame()
         df = df.reset_index()
@@ -137,12 +153,36 @@ def history(ticker, period="3mo"):
 
 
 @st.cache_data(ttl=900, show_spinner=False)
+def histories(tickers, period="3mo"):
+    """複数銘柄の終値履歴を1回の通信でまとめて取得し、{コード: DataFrame} で返す。"""
+    tickers = list(tickers)
+    out = {}
+    try:
+        data = yf.download(tickers, period=period, interval="1d", group_by="ticker",
+                           auto_adjust=True, progress=False, threads=True, timeout=15)
+    except Exception:
+        return out
+    for t in tickers:
+        try:
+            s = data[t]["Close"].dropna()
+            if s.empty:
+                continue
+            df = s.reset_index()
+            df.columns = ["日付", "終値"]
+            df["日付"] = pd.to_datetime(df["日付"]).dt.tz_localize(None)
+            out[t] = df
+        except Exception:
+            continue
+    return out
+
+
+@st.cache_data(ttl=900, show_spinner=False)
 def daily_moves(tickers):
     """対象銘柄の直近終値と前日比(%)をまとめて取得する。"""
     tickers = list(tickers)
     try:
         data = yf.download(tickers, period="10d", interval="1d", group_by="ticker",
-                           auto_adjust=True, progress=False, threads=True)
+                           auto_adjust=True, progress=False, threads=True, timeout=15)
     except Exception:
         return pd.DataFrame()
     rows = []
@@ -170,31 +210,34 @@ with st.sidebar:
 
 st.markdown("""<div class="hero"><div class="eyebrow">MARKET LENS · NIKKEI & MOVERS</div><h1>日経の最新ニュースと、値動きの大きい10社。</h1><p>日本経済新聞の最新記事と、前日比の動きが大きかった上位10社の株価・関連ニュースをまとめて確認できます。</p></div>""", unsafe_allow_html=True)
 
+# ---- 画面切り替え（st.tabs は全タブを毎回実行するため、radio で選んだ画面だけ実行する） ----
+view = st.radio("表示", ["📰 日経ニュース", "📈 値動き上位10社"], horizontal=True, label_visibility="collapsed")
+
 if market == "日本株":
     indexes = {"日経平均": "^N225", "TOPIX": "1306.T"}
 elif market == "米国株":
     indexes = {"S&P 500": "^GSPC", "NASDAQ": "^IXIC", "NYダウ": "^DJI"}
 else:
     indexes = {"日経平均": "^N225", "S&P 500": "^GSPC", "NASDAQ": "^IXIC", "ドル円": "JPY=X"}
-mc = st.columns(len(indexes))
+
+idx_hist = histories(tuple(indexes.values()), "10d")
+mc = st.columns(2) if len(indexes) > 2 else st.columns(len(indexes))
 for i, (label, ticker) in enumerate(indexes.items()):
-    df = history(ticker, "7d")
-    with mc[i]:
-        if len(df) >= 2:
+    df = idx_hist.get(ticker)
+    with mc[i % len(mc)]:
+        if df is not None and len(df) >= 2:
             p = df["終値"].dropna()
             st.metric(label, f"{p.iloc[-1]:,.2f}", f"{(p.iloc[-1] / p.iloc[-2] - 1) * 100:+.2f}%")
         else:
             st.metric(label, "取得不可")
 st.caption(f"更新確認：{datetime.now(JST):%Y-%m-%d %H:%M} JST ・ 無料データのためリアルタイム配信を保証しません。")
 
-t_news, t_stock = st.tabs(["📰 日経ニュース", "📈 値動き上位10社"])
-
-with t_news:
+if view == "📰 日経ニュース":
     st.subheader("日本経済新聞 最新記事")
     limit = st.slider("表示件数", 10, 50, 20, step=5)
     show_news(latest_nikkei(2), limit)
 
-with t_stock:
+else:
     st.subheader("値動きが激しかった上位10社と関連ニュース")
     st.caption("対象銘柄の前日比(%)の絶対値が大きい順に10社を表示します。関連ニュースは日経の記事のみです。")
 
@@ -211,20 +254,27 @@ with t_stock:
     if moves.empty:
         st.warning("株価を取得できませんでした。しばらくしてから「データを更新」を押してください。")
     else:
-        # 米国株は円換算して表示する（ドル円レートを使用）
-        fx_df = history("JPY=X", "3mo")
-        fx_df = fx_df[["日付", "終値"]].rename(columns={"終値": "レート"}).dropna() if not fx_df.empty else pd.DataFrame()
-        if not fx_df.empty:
-            fx_df["日付"] = fx_df["日付"].astype("datetime64[ns]")
-            fx_df = fx_df.sort_values("日付")
-        fx_rate = float(fx_df["レート"].iloc[-1]) if not fx_df.empty else None
-        if fx_rate is None and market != "日本株":
-            st.warning("ドル円レートを取得できなかったため、米国株はドル表示になります。")
-        st.caption("米国株は円換算で表示しています" + (f"（1ドル＝{fx_rate:,.2f}円で換算）。" if fx_rate else "。") + "前日比(%)は各銘柄の現地価格ベースです。")
-
         moves["名称"] = moves["コード"].map(universe)
         moves["abs"] = moves["前日比(%)"].abs()
         top = moves.sort_values("abs", ascending=False).head(10).reset_index(drop=True)
+        top_codes = tuple(top["コード"])
+        top_names = tuple(top["名称"])
+
+        with st.spinner("チャートと関連ニュースを取得しています…"):
+            hist_map = histories(top_codes, "3mo")
+            news_map = news_for_names(top_names, 14)
+
+        # 米国株は円換算して表示する（ドル円レートを使用）
+        fx_df = histories(("JPY=X",), "3mo").get("JPY=X")
+        if fx_df is not None and not fx_df.empty:
+            fx_df = fx_df.rename(columns={"終値": "レート"}).sort_values("日付")
+            fx_df["日付"] = fx_df["日付"].astype("datetime64[ns]")
+            fx_rate = float(fx_df["レート"].iloc[-1])
+        else:
+            fx_df, fx_rate = pd.DataFrame(), None
+        if fx_rate is None and market != "日本株":
+            st.warning("ドル円レートを取得できなかったため、米国株はドル表示になります。")
+        st.caption("米国株は円換算で表示しています" + (f"（1ドル＝{fx_rate:,.2f}円で換算）。" if fx_rate else "。") + "前日比(%)は各銘柄の現地価格ベースです。")
 
         for rank, row in top.iterrows():
             code, name = row["コード"], row["名称"]
@@ -240,23 +290,23 @@ with t_stock:
                     m1, m2 = st.columns(2)
                     m1.metric("直近終値", price_text)
                     m2.metric("前日比", f"{row['前日比(%)']:+.2f}%")
-                    h = history(code, "3mo")
-                    if not h.empty and to_yen:
-                        h["日付"] = h["日付"].astype("datetime64[ns]")
-                        h = pd.merge_asof(h.sort_values("日付"), fx_df, on="日付", direction="backward")
-                        h["レート"] = h["レート"].fillna(fx_rate)
-                        h["終値"] = h["終値"] * h["レート"]
-                    if not h.empty:
+                    h = hist_map.get(code)
+                    if h is not None and not h.empty:
+                        h = h.copy()
+                        if to_yen:
+                            h["日付"] = h["日付"].astype("datetime64[ns]")
+                            h = pd.merge_asof(h.sort_values("日付"), fx_df, on="日付", direction="backward")
+                            h["レート"] = h["レート"].fillna(fx_rate)
+                            h["終値"] = h["終値"] * h["レート"]
                         chart = alt.Chart(h).mark_line(strokeWidth=2.2).encode(
                             x=alt.X("日付:T", title=None),
                             y=alt.Y("終値:Q", title=f"終値（{unit}）", scale=alt.Scale(zero=False)),
                             tooltip=["日付:T", alt.Tooltip("終値:Q", format=",.0f" if unit == "円" else ",.2f")],
-                        ).properties(height=200)
+                        ).properties(height=180)
                         st.altair_chart(chart, use_container_width=True)
                 with right:
                     st.markdown("**関連ニュース（日経）**")
-                    items = nikkei_news(f'site:nikkei.com "{name}"', 14)
-                    show_news(items, 4, empty_msg="直近2週間の日経の関連記事は見つかりませんでした。")
+                    show_news(news_map.get(name, []), 4, empty_msg="直近2週間の日経の関連記事は見つかりませんでした。")
 
 st.divider()
 st.caption("このアプリは情報整理を支援するもので、投資助言ではありません。見出しから因果関係は断定できません。重要な情報は一次資料・複数の情報源で確認してください。")
